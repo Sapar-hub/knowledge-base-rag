@@ -37,6 +37,7 @@ ingest.py — сбор исходных данных и наполнение в�
 """
 
 import hashlib
+import re
 from pathlib import Path
 
 import config
@@ -71,7 +72,20 @@ def clean_text(text: str) -> str:
     Подсказка: начните с re.sub(r"-\n", "", text) и r"\s+" -> " ", посмотрите
     на результат глазами и добавьте правила под свои исходные данные.
     """
-    raise NotImplementedError("П2: реализуйте очистку текста")
+    # Сноски редакций ТК РФ: "(в ред. Федерального закона от ...)" — сотни строк,
+    # они шумят в эмбеддингах и не несут смысловой нагрузки для поиска
+    text = re.sub(r"^\s*\((?:в ред\.|введен|часть[^\n]*в ред\.)[^\n]*\)\s*$",
+                  "", text, flags=re.IGNORECASE | re.MULTILINE)
+    # Строки-разделители "------" в руководстве кадровика
+    text = re.sub(r"^\s*-{4,}\s*$", "", text, flags=re.MULTILINE)
+    # Разрыв слова по переносу строки
+    text = re.sub(r"-\n", "", text)
+    # Пробелы и табы внутри строк (переводы строк сохраняем — заголовки
+    # "#### Статья N" должны оставаться различимыми в чанке)
+    text = re.sub(r"[ \t]+", " ", text)
+    # Больше двух переводов строки подряд → одна пустая строка
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def chunk_text(text: str, size: int = config.CHUNK_SIZE,
@@ -84,7 +98,20 @@ def chunk_text(text: str, size: int = config.CHUNK_SIZE,
     Следите за двумя вещами: шаг сдвига равен size - overlap (не size), и
     overlap обязан быть меньше size, иначе цикл не сойдётся.
     """
-    raise NotImplementedError("П2: реализуйте нарезку с перекрытием")
+    if not (0 <= overlap < size):
+        raise ValueError(f"Требуется 0 <= overlap < size, получено overlap={overlap}, size={size}")
+
+    step = size - overlap
+    chunks = []
+    for i in range(0, len(text), step):
+        piece = text[i:i + size]
+        if piece.strip():
+            chunks.append(piece)
+        # Хвост уже покрыт: дальше сдвиг даст чанк целиком внутри
+        # перекрытия предыдущего — дубль в индекс не нужен
+        if i + size >= len(text):
+            break
+    return chunks
 
 
 def detect_category(text: str, source: str) -> str:
@@ -97,7 +124,24 @@ def detect_category(text: str, source: str) -> str:
     Достаточно правил по имени файла и ключевым словам — LLM здесь не нужна.
     Пустых категорий быть не должно: заведите рубрику по умолчанию.
     """
-    raise NotImplementedError("П2: реализуйте рубрикацию")
+    lowered = text.lower()
+    for category, keywords in CATEGORIES.items():
+        if any(kw in lowered for kw in keywords):
+            return category
+    return DEFAULT_CATEGORY
+
+
+# Рубрики корпуса по приоритету (первая совпавшая побеждает).
+# contract_check здесь намеренно отсутствует: это тип пользовательского запроса
+# («проверь мой договор»), а не рубрика документов базы знаний.
+CATEGORIES: dict[str, tuple[str, ...]] = {
+    "termination": ("увольн", "прекращ", "расторж"),
+    "payment": ("заработн", "оплат", "преми", "удержан"),
+    "working_time": ("рабочее время", "рабочего времени", "отпуск",
+                     "испытан", "смен"),
+    "mandatory_terms": ("трудовой договор", "трудового договора", "обязательн"),
+}
+DEFAULT_CATEGORY = "general"
 
 
 # --- Сборка индекса: готова ---
