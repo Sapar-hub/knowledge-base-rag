@@ -14,6 +14,8 @@ pypdf==4.3.1
 
 # Протокол вызова инструментов
 mcp==1.2.0
+# mcp 1.2.0 импортирует eval_type_backport, которого нет в pydantic>=2.11
+pydantic==2.10.6
 
 # LLM
 gigachat==0.1.35

@@ -6,6 +6,9 @@ data/chroma/
 *.db
 security_logs.txt
 
+# Бандлы для сдачи практик
+*.bundle
+
 # Python
 __pycache__/
 *.py[cod]
