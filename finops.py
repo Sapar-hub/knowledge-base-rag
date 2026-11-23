@@ -55,9 +55,12 @@ BASELINE = config.DATA_DIR / "finops_baseline.json"
 # Эталонный диалог: одинаковый до и после оптимизации, иначе замеры несравнимы.
 # ЗАМЕНИТЕ на вопросы своего домена, но потом не меняйте между двумя прогонами.
 REFERENCE_DIALOG = [
-    "ЗАМЕНИТЕ: первый вопрос по вашему домену",
-    "ЗАМЕНИТЕ: уточняющий вопрос, опирающийся на первый ответ",
-    "ЗАМЕНИТЕ: вопрос из другого раздела базы знаний",
+    # Обязательные условия договора (ст. 57 ТК РФ)
+    "Какие условия обязательны для включения в трудовой договор?",
+    # Опирается на первый ответ: «этих условий» без истории не разрешается
+    "А если какого-то из этих условий в договоре нет, договор недействителен?",
+    # Другой раздел: оплата труда (ст. 136 ТК РФ)
+    "В какие сроки должна выплачиваться заработная плата?",
 ]
 
 
@@ -130,7 +133,30 @@ def estimate_tco(measurement: Measurement, dialogs_per_day: int,
     как допущение. Вторая: считайте вход и выход раздельно до самого конца, их
     цены отличаются в разы, и усреднение искажает результат.
     """
-    raise NotImplementedError("П8: реализуйте расчёт TCO")
+    if measurement.turns <= 0:
+        raise ValueError("в замере нет ни одной реплики — считать не по чему")
+
+    # Средний расход на реплику, вход и выход раздельно (тарифы у них могут
+    # различаться). Допущение: среднее по эталонному диалогу из трёх реплик;
+    # на длинном диалоге вход растёт с историей, так что это оценка снизу.
+    prompt_per_turn = measurement.prompt_tokens / measurement.turns
+    completion_per_turn = measurement.completion_tokens / measurement.turns
+
+    prompt_per_dialog = prompt_per_turn * turns_per_dialog
+    completion_per_dialog = completion_per_turn * turns_per_dialog
+    per_dialog = (prompt_per_dialog / 1_000_000 * config.PRICE_INPUT_PER_1M
+                  + completion_per_dialog / 1_000_000 * config.PRICE_OUTPUT_PER_1M)
+
+    per_day = per_dialog * dialogs_per_day
+    return {
+        "per_dialog": per_dialog,
+        "per_day": per_day,
+        "per_month": per_day * 30,
+        "per_year": per_day * 365,
+        # Токены — для проверки расчёта и для метрики 3 ТЗ
+        "prompt_tokens_per_day": prompt_per_dialog * dialogs_per_day,
+        "completion_tokens_per_day": completion_per_dialog * dialogs_per_day,
+    }
 
 
 def compare(before: Measurement, after: Measurement,
@@ -166,7 +192,7 @@ def compare(before: Measurement, after: Measurement,
 
 
 if __name__ == "__main__":
-    # TODO (П8): подставьте сценарий, который задал преподаватель
+    # Сценарий преподавателем не объявлен — принят по умолчанию шаблона (500 × 8)
     DIALOGS_PER_DAY = 500
     TURNS_PER_DIALOG = 8
 

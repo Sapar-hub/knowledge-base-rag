@@ -46,8 +46,11 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:1.5b")
 # Цена за 1 000 000 токенов в рублях. Тарифы меняются — подставьте актуальные
 # из личного кабинета провайдера и укажите в отчёте дату, на которую они взяты.
 # Вход и выход тарифицируются по-разному, поэтому это две константы, а не одна.
-PRICE_INPUT_PER_1M = 0.0
-PRICE_OUTPUT_PER_1M = 0.0
+# GigaChat Lite (`GIGACHAT_MODEL=GigaChat`), синхронный режим, оплата по факту:
+# 0,065 ₽ за 1000 токенов с НДС = 65 ₽ за 1 млн; вход и выход по одной цене.
+# Источник: developers.sber.ru/docs/ru/gigachat/tariffs/legal-tariffs, на 24.11.2026.
+PRICE_INPUT_PER_1M = 65.0
+PRICE_OUTPUT_PER_1M = 65.0
 
 # --- Каналы ---
 VK_TOKEN = os.getenv("VK_TOKEN", "")
