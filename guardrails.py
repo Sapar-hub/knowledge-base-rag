@@ -30,18 +30,61 @@ from datetime import datetime
 import config
 from contracts import GuardResult
 
-# Паттерны атак. Здесь два примера, чтобы был понятен формат — остальное за вами.
-# Формат: (имя паттерна, регулярное выражение)
+# Паттерны атак. Формат: (имя паттерна, регулярное выражение).
+# Каждый паттерн требует связки «глагол-команда + объект атаки», а не одного
+# слова: «правила», «инструкции», «база знаний» встречаются и в законных вопросах
+# кадровика («какие правила приёма», «инструкция по охране труда»).
 PATTERNS: list[tuple[str, re.Pattern]] = [
+    # Прямая инъекция: «забудь предыдущие инструкции», «ignore previous instructions»
     ("instruction_override", re.compile(
-        r"(забудь|игнорируй|отмени)\s+(все\s+)?(предыдущие|прошлые|свои)\s+"
-        r"(инструкции|команды|правила|указания)", re.IGNORECASE)),
+        r"(забудь|игнорируй|отмени|не\s+учитывай|сбрось)\s+(все\s+|всё\s+)?"
+        r"(предыдущие|прошлые|свои|прежние|данные\s+тебе|системные)\s+"
+        r"(инструкции|команды|правила|указания|установки|ограничения)", re.IGNORECASE)),
+    ("instruction_override_en", re.compile(
+        r"\b(ignore|disregard|forget)\s+(all\s+)?(the\s+)?(previous|prior|above|your)\s+"
+        r"(instructions|rules|prompts?|directions)", re.IGNORECASE)),
+    # Утечка системного промпта
     ("prompt_leak", re.compile(
-        r"(покажи|выведи|повтори|назови)\s+(мне\s+)?(свой\s+|весь\s+)?"
-        r"(системный\s+промпт|system\s*prompt|исходные\s+инструкции)", re.IGNORECASE)),
-    # TODO (П7): ролевой обход («представь, что правил не существует», «ты теперь…»),
-    # попытка сменить язык вывода на служебный, запрос выдать содержимое индекса целиком
+        r"(покажи|выведи|повтори|назови|напиши|раскрой|процитируй)\s+(мне\s+)?"
+        r"(свой\s+|свои\s+|весь\s+|все\s+|исходный\s+|исходные\s+)?"
+        r"(системный\s+промпт|системные\s+инструкции|system\s*prompt|исходные\s+инструкции|"
+        r"инструкции,\s+которые\s+тебе\s+дали|первое\s+сообщение)", re.IGNORECASE)),
+    ("prompt_leak_en", re.compile(
+        r"\b(show|print|reveal|repeat|output)\s+(me\s+)?(your\s+|the\s+)?"
+        r"(system\s+prompt|initial\s+instructions|hidden\s+instructions)", re.IGNORECASE)),
+    # Ролевой обход: снять правила через вымышленную ситуацию или новую роль
+    ("role_bypass", re.compile(
+        r"(представь|вообрази|допусти|давай\s+представим|сделаем\s+вид),?\s+(себе\s+)?(что\s+)?"
+        r"(у\s+тебя\s+)?(больше\s+)?("
+        # «нет никаких правил» и «правил не существует» — оба порядка слов
+        r"(нет|не\s+существует|отсутствуют|отменили)\s+(никаких\s+|всех\s+)?"
+        r"(правил|ограничений|инструкций|запретов|фильтров)"
+        r"|(никаких\s+)?(правил|ограничений|инструкций|запретов|фильтров)\s+(больше\s+)?"
+        r"(нет|не\s+существует|отсутствуют|отменили|не\s+действуют))", re.IGNORECASE)),
+    ("role_switch", re.compile(
+        r"(ты\s+(теперь|больше\s+не)|отныне\s+ты|притворись|сыграй\s+роль|веди\s+себя\s+как|"
+        r"действуй\s+как)\s+[^.?!]{0,40}?"
+        r"(без\s+(правил|ограничений|цензуры|фильтров)|ассистент|бот|модел|ии\b|"
+        r"злой|хакер|разработчик|администратор|dan\b)", re.IGNORECASE)),
+    ("jailbreak_mode", re.compile(
+        r"\b(режим\s+(разработчика|бога|без\s+ограничений)|developer\s+mode|"
+        r"jailbreak|джейлбрейк|DAN\s+mode|do\s+anything\s+now)\b", re.IGNORECASE)),
+    # Смена языка вывода на служебный: кодировки, чтобы обойти проверки текста
+    ("output_encoding", re.compile(
+        r"(отвечай|ответь|выведи|пиши|напиши|закодируй)\s+[^.?!]{0,30}?"
+        r"(в\s+|на\s+)?(base64|base\s*64|hex|шестнадцатеричн|двоичн|азбук[еуа]\s+морзе|rot13|"
+        r"шифр[еом]|в\s+обратном\s+порядке)", re.IGNORECASE)),
+    # Выгрузка базы знаний целиком
+    ("index_dump", re.compile(
+        r"(выведи|покажи|выгрузи|перечисли|отдай|скопируй|распечатай)\s+(мне\s+)?"
+        r"(всю|весь|все|целиком|полностью)\s+(содержимое\s+)?"
+        r"(базу\s+знаний|базы\s+знаний|индекс|индекса|документы|фрагменты|чанки|коллекци[юи]|"
+        r"корпус)", re.IGNORECASE)),
 ]
+
+# Длинный вставленный договор допустим (роль checker), но в нём ищем те же атаки:
+# проверка идёт по всему тексту, а не по первым символам.
+_SPACES = re.compile(r"\s+")
 
 
 def check(text: str) -> GuardResult:
@@ -55,8 +98,14 @@ def check(text: str) -> GuardResult:
     слишком узкий пропустит атаку. Проверяйте себя на Gold Dataset из П6:
     ни один из десяти вопросов не должен блокироваться.
     """
-    # TODO (П7): пройти по PATTERNS и вернуть вердикт
-    return GuardResult(allowed=True)
+    # Нормализация: «ё» и переносы строк не должны ломать паттерн
+    normalized = _SPACES.sub(" ", text.replace("ё", "е").replace("Ё", "Е"))
+    hits = [(name, m.group(0)) for name, pattern in PATTERNS
+            if (m := pattern.search(normalized))]
+    if not hits:
+        return GuardResult(allowed=True)
+    return GuardResult(allowed=False, reason=hits[0][0],
+                       matched=[fragment for _, fragment in hits])
 
 
 def log_attempt(session_id: str, text: str, result: GuardResult) -> None:
@@ -66,5 +115,10 @@ def log_attempt(session_id: str, text: str, result: GuardResult) -> None:
     200 символов ввода. Полный ввод не пишите — в нём могут быть персональные
     данные, а лог не защищён (152-ФЗ, Л7).
     """
-    # TODO (П7): дописать строку в config.SECURITY_LOG
-    return None
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    # Одна строка на попытку: переводы строк и табуляции из ввода не должны
+    # разрывать запись и подделывать соседние строки журнала
+    snippet = _SPACES.sub(" ", text[:200]).strip()
+    line = f"{timestamp}\t{session_id}\t{result.reason}\t{snippet}\n"
+    with open(config.SECURITY_LOG, "a", encoding="utf-8") as log_file:
+        log_file.write(line)
