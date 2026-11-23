@@ -28,7 +28,7 @@ import streamlit as st
 import config
 from orchestrator import Orchestrator
 
-st.set_page_config(page_title="Справочный ассистент", page_icon="🔎")
+st.set_page_config(page_title="Проверка трудового договора", page_icon="📄")
 
 
 @st.cache_resource
@@ -45,9 +45,14 @@ if "history" not in st.session_state:
 
 orchestrator = get_orchestrator()
 
-# TODO (П6): замените заголовок и подсказку на свои
-st.title("Справочный ассистент")
-st.caption("Отвечает по загруженной базе знаний и ссылается на источники.")
+st.title("Проверка трудового договора на соответствие ТК РФ")
+st.caption(
+    "Отвечает на вопросы кадровика и проверяет текст трудового договора на обязательные "
+    "условия по Трудовому кодексу РФ, руководству Роструда по обязательным требованиям "
+    "и типовой форме договора для микропредприятий (постановление № 858). "
+    "Каждый ответ — со ссылкой на источник. Не заменяет юриста. "
+    "Не вставляйте реальные персональные данные."
+)
 
 # Готовая часть, не убирать: на офлайн-заглушке ответы выглядят осмысленно,
 # и без плашки это легко принять за работающую систему — в том числе на защите.
@@ -71,13 +76,16 @@ for role, content in st.session_state.history:
     with st.chat_message(role):
         st.markdown(content)
 
-if question := st.chat_input("Задайте вопрос по базе знаний"):
+if question := st.chat_input(
+    "Например: «Каким работникам не устанавливается испытательный срок?» "
+    "или «Проверь договор: …» с текстом договора"
+):
     st.session_state.history.append(("user", question))
     with st.chat_message("user"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        with st.spinner("Ищу в базе знаний…"):
+        with st.spinner("Ищу нормы в ТК РФ и руководстве Роструда…"):
             answer = orchestrator.handle(st.session_state.session_id, question)
         st.markdown(answer)
 

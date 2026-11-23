@@ -35,6 +35,10 @@ CASES = {
 }
 
 
+# id вопросов gold_dataset.json, в которых пользователь просит проверить договор
+GOLD_CHECK_IDS = {10}
+
+
 def bare() -> Orchestrator:
     """Объект без MCP и LLM: для П3 достаточно состояния автомата."""
     orchestrator = Orchestrator.__new__(Orchestrator)
@@ -66,10 +70,12 @@ def main() -> int:
 
     dataset_path = Path(__file__).with_name("gold_dataset.json")
     dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
-    print("--- gold_dataset.json: все вопросы должны идти аналитику ---")
+    # Справочные вопросы идут аналитику; вопрос П6 с текстом договора — проверяющему
+    print("--- gold_dataset.json: вопросы — аналитику, просьба проверить — проверяющему ---")
     for case in dataset:
+        expected = "check" if case["id"] in GOLD_CHECK_IDS else "question"
         got = orchestrator.detect_intent(case["question"])
-        report(got == "question", "question", got, case["question"], errors)
+        report(got == expected, expected, got, case["question"], errors)
 
     nonsense = "asdf qwer zxcv"
     got = orchestrator.detect_intent(nonsense)
